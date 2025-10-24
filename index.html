@@ -1,4 +1,4 @@
-<!-- index.html — Морской бой для Telegram WebApp: ручная расстановка, кубики, пошаговый бой -->
+<!-- index.html — Морской бой для Telegram WebApp с выбором режима -->
 <!DOCTYPE html>
 <html lang="ru">
 <head>
@@ -6,31 +6,41 @@
   <title>Морской бой</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link rel="stylesheet" href="style.css" />
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
 </head>
 <body>
   <h1>⚓ Морской бой</h1>
 
-  <div id="status">
-    Расставьте свои корабли: сначала выберите размер, затем кликайте по клеткам по прямой.
+  <!-- 🔹 Выбор режима -->
+  <div id="mode-select" class="mode-select">
+    <button id="aiMode">🧠 Играть с ИИ</button>
+    <button id="netMode">🌐 Игра по сети</button>
   </div>
 
-  <div id="setup-panel">
-    <div id="ship-buttons"><!-- создаётся из скрипта по FLEET --></div>
-    <div class="setup-actions">
-      <button id="cancelSelection" disabled>Отменить выделение</button>
-      <button id="startBattle" disabled>Начать бой ⚔️</button>
+  <!-- 🔹 Игровой интерфейс -->
+  <div id="game-container" style="display:none;">
+    <div id="status">
+      Расставьте свои корабли: сначала выберите размер, затем кликайте по клеткам по прямой.
     </div>
-  </div>
 
-  <div id="dice-controls" class="dice" style="display:none;">
-    <button id="rollBtn">🎲 Бросить кубик</button>
-    <div id="timer">3</div>
-    <div id="dice-result"></div>
-  </div>
+    <div id="setup-panel">
+      <div id="ship-buttons"></div>
+      <div class="setup-actions">
+        <button id="cancelSelection" disabled>Отменить выделение</button>
+        <button id="startBattle" disabled>Начать бой ⚔️</button>
+      </div>
+    </div>
 
-  <div id="boards">
-    <div id="player-board" class="board" aria-label="Поле игрока"></div>
-    <div id="computer-board" class="board" aria-label="Поле соперника" style="display:none;"></div>
+    <div id="dice-controls" class="dice" style="display:none;">
+      <button id="rollBtn">🎲 Бросить кубик</button>
+      <div id="timer">3</div>
+      <div id="dice-result"></div>
+    </div>
+
+    <div id="boards">
+      <div id="player-board" class="board" aria-label="Поле игрока"></div>
+      <div id="computer-board" class="board" aria-label="Поле соперника" style="display:none;"></div>
+    </div>
   </div>
 
   <script src="script.js"></script>
