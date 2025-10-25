@@ -1,5 +1,5 @@
-/* script.js — Морской бой с рабочим ИИ и режимом "онлайн" (Telegram WebApp)
-   Версия 25.10.2025
+/* script.js — Морской бой с ИИ и Онлайн-режимом
+   Версия 25.10.2025 — полностью совместима с Telegram WebApp и GitHub Pages
 */
 
 const tg = window.Telegram?.WebApp;
@@ -8,7 +8,7 @@ if (tg) {
   tg.disableClosingConfirmation();
 }
 
-// Ловим ошибки, чтобы не закрывало игру
+// Безопасный лог ошибок, чтобы WebApp не закрывался
 window.addEventListener("error", (e) => {
   console.error("Ошибка JS:", e.message);
   if (tg) tg.showAlert("Ошибка: " + e.message);
@@ -20,10 +20,11 @@ let phase = "placement";
 let playerBoard, computerBoard;
 let currentTurn = "player";
 
-// ===== UI-элементы =====
+// ====== Элементы интерфейса ======
 const root = document.body;
 root.innerHTML = `
   <div id="modeSelect" class="mode-select">
+    <h2>⚓ Морской бой</h2>
     <button id="aiMode">🎮 Играть с ИИ</button>
     <button id="netMode">🌐 Играть по сети</button>
   </div>
@@ -42,14 +43,16 @@ const statusEl = document.getElementById("status");
 const playerEl = document.getElementById("playerBoard");
 const compEl = document.getElementById("computerBoard");
 
-// ====== Создание пустых досок ======
+// =============== ОСНОВНЫЕ ФУНКЦИИ ===============
+
+// Создание пустого поля
 function makeBoard() {
   return Array.from({ length: SIZE }, () =>
     Array.from({ length: SIZE }, () => ({ ship: false, hit: false }))
   );
 }
 
-// ====== Авторасстановка ======
+// Автоматическая расстановка кораблей
 function autoPlace(board) {
   const ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
   for (let s of ships) {
@@ -76,7 +79,7 @@ function autoPlace(board) {
   }
 }
 
-// ====== Отрисовка ======
+// Отрисовка поля
 function renderBoard(board, element, showShips = false) {
   element.innerHTML = "";
   for (let y = 0; y < SIZE; y++) {
@@ -95,12 +98,12 @@ function renderBoard(board, element, showShips = false) {
   }
 }
 
-// ====== Проверка победы ======
+// Проверка победы
 function checkWin(board) {
   return board.every((row) => row.every((c) => !c.ship || c.hit));
 }
 
-// ====== ИИ-ход ======
+// ИИ делает ход
 function aiTurn() {
   let x, y;
   do {
@@ -124,7 +127,7 @@ function aiTurn() {
   }
 }
 
-// ====== Игрок стреляет ======
+// Игрок стреляет
 function playerShoot(x, y) {
   const cell = computerBoard[y][x];
   if (cell.hit || phase !== "battle") return;
@@ -144,7 +147,7 @@ function playerShoot(x, y) {
   }
 }
 
-// ====== Инициализация ======
+// Инициализация игры
 function initGame() {
   playerBoard = makeBoard();
   computerBoard = makeBoard();
@@ -156,12 +159,12 @@ function initGame() {
   statusEl.textContent = "Ваш ход! Стреляйте по полю соперника.";
 }
 
-// ====== Онлайн ожидание ======
+// Онлайн-ожидание
 function startOnlineWaiting() {
   gameContainer.classList.remove("hidden");
   modeSelect.classList.add("hidden");
-  statusEl.textContent = "🌐 Ожидаем соперника (15)";
-  let seconds = 15;
+  statusEl.textContent = "🌐 Ожидаем соперника (30)";
+  let seconds = 30;
   const timer = setInterval(() => {
     seconds--;
     statusEl.textContent = `🌐 Ожидаем соперника (${seconds})`;
@@ -176,7 +179,7 @@ function startOnlineWaiting() {
   }, 1000);
 }
 
-// ====== Выбор режима ======
+// ====== ВЫБОР РЕЖИМА ======
 document.getElementById("aiMode").addEventListener("click", () => {
   mode = "ai";
   modeSelect.classList.add("hidden");
