@@ -1,224 +1,461 @@
-/* script.js — Полная версия Морского боя + Telegram WebApp режим
-   Версия 25.10.2025 — полностью совместимо с твоей старой игрой
-*/
-
-// ==== Telegram интеграция ====
-const tg = window.Telegram?.WebApp || null;
-if (tg) {
-  tg.expand();
-  tg.disableClosingConfirmation();
-}
-
-window.addEventListener("error", (e) => {
-  console.error("Ошибка JS:", e.message);
-  if (tg) tg.showAlert("Ошибка: " + e.message);
-});
-
-let mode = null; // "ai" или "online"
-let waitingTimer = null;
-
-// Показывает выбор режима
-function showModeSelector() {
-  const overlay = document.createElement("div");
-  overlay.id = "modeSelector";
-  overlay.style.position = "fixed";
-  overlay.style.top = "0";
-  overlay.style.left = "0";
-  overlay.style.width = "100%";
-  overlay.style.height = "100%";
-  overlay.style.background = "rgba(0,0,0,0.8)";
-  overlay.style.display = "flex";
-  overlay.style.flexDirection = "column";
-  overlay.style.alignItems = "center";
-  overlay.style.justifyContent = "center";
-  overlay.style.zIndex = "9999";
-  overlay.innerHTML = `
-    <h2 style="color:white;margin-bottom:20px;">⚓ Морской бой</h2>
-    <button id="btnAI" style="font-size:18px;padding:10px 20px;margin:5px;">🎮 Играть с ИИ</button>
-    <button id="btnNet" style="font-size:18px;padding:10px 20px;margin:5px;">🌐 Играть по сети</button>
-  `;
-  document.body.appendChild(overlay);
-
-  document.getElementById("btnAI").onclick = () => {
-    mode = "ai";
-    overlay.remove();
-    initGame(); // запуск твоей обычной игры
-  };
-
-  document.getElementById("btnNet").onclick = () => {
-    mode = "online";
-    overlay.innerHTML = `
-      <h2 style="color:white;">🌐 Ожидаем соперника (30)</h2>
-    `;
-    let seconds = 30;
-    waitingTimer = setInterval(() => {
-      seconds--;
-      const h2 = overlay.querySelector("h2");
-      if (h2) h2.textContent = `🌐 Ожидаем соперника (${seconds})`;
-      if (seconds <= 0) {
-        clearInterval(waitingTimer);
-        overlay.innerHTML = `<h2 style="color:white;">⏳ Соперник не подключился</h2>`;
-        setTimeout(() => {
-          overlay.remove();
-          if (tg) tg.close();
-          else location.reload();
-        }, 3000);
-      }
-    }, 1000);
-
-    try {
-      if (tg) tg.sendData(JSON.stringify({ type: "create_room" }));
-    } catch (e) {
-      console.warn("sendData error:", e);
-    }
-  };
-}
-
-// Запускает игру в зависимости от окружения
-window.addEventListener("load", () => {
-  if (tg) showModeSelector();
-  else initGame();
-});
-
-// ===================================================================
-// === Ниже — твоя полная оригинальная игра. Ничего не менялось ===
-// ===================================================================
+/* script.js — Морской бой с авторасстановкой, отсчётом, умным ИИ, подсветкой и переключением полей (без кнопки «Новая игра») */
 
 const SIZE = 10;
-let playerField = [];
-let enemyField = [];
+const FLEET = { 4: 1, 3: 2, 2: 3, 1: 4 };
+
+let phase = "placing";
+let playerBoard, computerBoard;
 let playerShips = [];
-let enemyShips = [];
-let playerTurn = true;
-let phase = "placement";
-let selectedShipSize = null;
-let remainingShips = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
-let playerBoardEl = document.getElementById("player-board");
-let enemyBoardEl = document.getElementById("enemy-board");
-let statusEl = document.getElementById("status");
-let startButton = document.getElementById("startButton");
-let autoButton = document.getElementById("autoButton");
+let computerShips = [];
+let selectedSize = null;
+let selectedCells = [];
+let currentTurn = null;
+let aiMemory = { hits: [], direction: "" };
+let lastShot = { x: -1, y: -1, board: null };
 
-function createBoard() {
-  const board = [];
-  for (let y = 0; y < SIZE; y++) {
-    const row = [];
-    for (let x = 0; x < SIZE; x++) {
-      row.push({ hasShip: false, hit: false });
-    }
-    board.push(row);
-  }
-  return board;
+const playerEl = document.getElementById("player-board");
+const compEl = document.getElementById("computer-board");
+const statusEl = document.getElementById("status");
+const startBtn = document.getElementById("startBattle");
+const cancelSel = document.getElementById("cancelSelection");
+const shipBtnsBox = document.getElementById("ship-buttons");
+const diceBox = document.getElementById("dice-controls");
+const rollBtn = document.getElementById("rollBtn");
+const timerEl = document.getElementById("timer");
+const diceResult = document.getElementById("dice-result");
+
+// Авторасстановка
+const autoBtn = document.createElement("button");
+autoBtn.textContent = "🚀 Авторасстановка";
+autoBtn.id = "autoPlace";
+startBtn.insertAdjacentElement("beforebegin", autoBtn);
+
+// Кнопка «Переключить поле»
+const toggleBtn = document.createElement("button");
+toggleBtn.textContent = "🔁 Переключить поле";
+toggleBtn.id = "toggleView";
+toggleBtn.style.display = "none";
+statusEl.parentElement.appendChild(toggleBtn);
+
+// ========== Утилиты ==========
+function makeEmptyBoard() {
+  return Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => ({ ship: false, hit: false })));
 }
+function isInside(x, y) { return x >= 0 && x < SIZE && y >= 0 && y < SIZE; }
+function clone(o) { return JSON.parse(JSON.stringify(o)); }
 
-function renderBoard(board, element, hideShips = false) {
+// ========== Рендер ==========
+function cellIndex(x, y) { return y * SIZE + x; }
+
+function renderBoard(board, element, showShips) {
   element.innerHTML = "";
   for (let y = 0; y < SIZE; y++) {
     for (let x = 0; x < SIZE; x++) {
+      const d = board[y][x];
       const cell = document.createElement("div");
-      cell.classList.add("cell");
-      const cellData = board[y][x];
+      cell.className = "cell";
+      cell.dataset.x = x;
+      cell.dataset.y = y;
 
-      if (cellData.hit && cellData.hasShip) cell.classList.add("hit");
-      else if (cellData.hit && !cellData.hasShip) cell.classList.add("miss");
-      else if (cellData.hasShip && !hideShips) cell.classList.add("ship");
+      // Показываем корабли, попадания, промахи
+      if (showShips && d.ship) cell.classList.add("ship");
+      if (d.hit && d.ship) cell.classList.add("hit");
+      if (d.hit && !d.ship) cell.classList.add("miss");
 
-      if (phase === "battle" && element === enemyBoardEl && !cellData.hit) {
-        cell.addEventListener("click", () => handlePlayerShot(x, y));
+      // 🔹 Подсветка временно выбранных клеток при расстановке
+      if (phase === "placing" && element === playerEl && selectedCells.some(c => c.x === x && c.y === y)) {
+        cell.classList.add("preview");
       }
+
+      // 🔹 Мигание последнего выстрела
+      if (lastShot.x === x && lastShot.y === y && lastShot.board === element) {
+        cell.classList.add("blink");
+      }
+
+      cell.addEventListener("click", () => {
+        if (phase === "placing" && element === playerEl) handlePlacementClick(x, y);
+        else if (phase === "battle" && element === compEl && currentTurn === "player")
+          handlePlayerShot(x, y);
+      });
       element.appendChild(cell);
     }
   }
 }
 
-function autoPlaceShips(board) {
-  const ships = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
-  for (const size of ships) {
+// 🔹 Функция для мигания клетки
+function blinkCell(boardEl, x, y) {
+  lastShot = { x, y, board: boardEl };
+  renderBoard(boardEl === playerEl ? playerBoard : computerBoard, boardEl, boardEl === playerEl);
+  
+  // Убираем мигание через 1 секунду
+  setTimeout(() => {
+    lastShot = { x: -1, y: -1, board: null };
+    renderBoard(boardEl === playerEl ? playerBoard : computerBoard, boardEl, boardEl === playerEl);
+  }, 1000);
+}
+
+// ========== Проверки ==========
+function boardHasShipNear(board, x, y) {
+  for (let yy = y - 1; yy <= y + 1; yy++)
+    for (let xx = x - 1; xx <= x + 1; xx++)
+      if (isInside(xx, yy) && board[yy][xx].ship) return true;
+  return false;
+}
+
+function validateFinalPlacement(board, cells) {
+  if (!cells.every(({ x, y }) => isInside(x, y))) return false;
+  const xs = cells.map(c => c.x);
+  const ys = cells.map(c => c.y);
+  const vertical = xs.every(v => v === xs[0]);
+  const horizontal = ys.every(v => v === ys[0]);
+  if (!vertical && !horizontal) return false;
+  const sorted = (vertical ? ys : xs).slice().sort((a, b) => a - b);
+  for (let i = 1; i < sorted.length; i++) if (sorted[i] !== sorted[i - 1] + 1) return false;
+  for (const { x, y } of cells) {
+    if (board[y][x].ship) return false;
+    for (let yy = y - 1; yy <= y + 1; yy++)
+      for (let xx = x - 1; xx <= x + 1; xx++) {
+        if (!isInside(xx, yy)) continue;
+        const isSelf = cells.some(c => c.x === xx && c.y === yy);
+        if (!isSelf && board[yy][xx].ship) return false;
+      }
+  }
+  return true;
+}
+
+function allFleetPlaced() { return Object.values(FLEET).every(v => v === 0); }
+
+// ========== Расстановка ==========
+function handlePlacementClick(x, y) {
+  if (selectedSize == null) return (statusEl.textContent = "Выберите корабль.");
+  if (boardHasShipNear(playerBoard, x, y))
+    return (statusEl.textContent = "Корабли не должны касаться.");
+  selectedCells.push({ x, y });
+  renderBoard(playerBoard, playerEl, true);
+  if (selectedCells.length === selectedSize) {
+    if (validateFinalPlacement(playerBoard, selectedCells)) {
+      selectedCells.forEach(({ x, y }) => (playerBoard[y][x].ship = true));
+      playerShips.push(clone(selectedCells));
+      FLEET[selectedSize]--;
+      selectedSize = null;
+      selectedCells = [];
+      renderBoard(playerBoard, playerEl, true);
+      updateShipButtons();
+      if (allFleetPlaced()) startBtn.disabled = false;
+      statusEl.textContent = "Корабль установлен.";
+    } else {
+      selectedCells = [];
+      renderBoard(playerBoard, playerEl, true);
+      statusEl.textContent = "Ошибка: по прямой и без касаний.";
+    }
+  }
+}
+
+function updateShipButtons() {
+  shipBtnsBox.innerHTML = "";
+  Object.entries(FLEET)
+    .sort((a, b) => b[0] - a[0])
+    .forEach(([len, count]) => {
+      const btn = document.createElement("button");
+      btn.dataset.size = String(len);
+      btn.textContent = `${len}-клеточный × ${count}`;
+      if (count === 0) btn.disabled = true;
+      btn.addEventListener("click", () => {
+        if (FLEET[len] === 0) return;
+        selectedSize = Number(len);
+        selectedCells = [];
+        statusEl.textContent = `Выбран ${len}-клеточный корабль.`;
+        renderBoard(playerBoard, playerEl, true);
+      });
+      shipBtnsBox.appendChild(btn);
+    });
+}
+
+// Авторасстановка игрока
+autoBtn.addEventListener("click", () => {
+  Object.keys(FLEET).forEach(k => (FLEET[k] = 0));
+  playerBoard = makeEmptyBoard();
+  playerShips = [];
+  const sizes = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
+  for (const len of sizes) {
     let placed = false;
     while (!placed) {
       const dir = Math.random() < 0.5 ? "h" : "v";
-      const x = Math.floor(Math.random() * SIZE);
-      const y = Math.floor(Math.random() * SIZE);
-      if (canPlaceShip(board, x, y, size, dir)) {
-        placeShip(board, x, y, size, dir);
+      const x0 = Math.floor(Math.random() * SIZE);
+      const y0 = Math.floor(Math.random() * SIZE);
+      const cells = [];
+      for (let i = 0; i < len; i++) {
+        const x = dir === "h" ? x0 + i : x0;
+        const y = dir === "v" ? y0 + i : y0;
+        if (!isInside(x, y)) { cells.length = 0; break; }
+        cells.push({ x, y });
+      }
+      if (!cells.length) continue;
+      if (validateFinalPlacement(playerBoard, cells)) {
+        cells.forEach(({ x, y }) => (playerBoard[y][x].ship = true));
+        playerShips.push(cells);
+        placed = true;
+      }
+    }
+  }
+  renderBoard(playerBoard, playerEl, true);
+  startBtn.disabled = false;
+  statusEl.textContent = "Корабли расставлены автоматически!";
+});
+
+// Авторасстановка соперника
+function autoPlaceComputer() {
+  const sizes = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
+  for (const len of sizes) {
+    let placed = false;
+    while (!placed) {
+      const dir = Math.random() < 0.5 ? "h" : "v";
+      const x0 = Math.floor(Math.random() * SIZE);
+      const y0 = Math.floor(Math.random() * SIZE);
+      const cells = [];
+      for (let i = 0; i < len; i++) {
+        const x = dir === "h" ? x0 + i : x0;
+        const y = dir === "v" ? y0 + i : y0;
+        if (!isInside(x, y)) { cells.length = 0; break; }
+        cells.push({ x, y });
+      }
+      if (!cells.length) continue;
+      if (validateFinalPlacement(computerBoard, cells)) {
+        cells.forEach(({ x, y }) => (computerBoard[y][x].ship = true));
+        computerShips.push(cells);
         placed = true;
       }
     }
   }
 }
 
-function canPlaceShip(board, x, y, size, dir) {
-  for (let i = 0; i < size; i++) {
-    const nx = dir === "h" ? x + i : x;
-    const ny = dir === "v" ? y + i : y;
-    if (nx >= SIZE || ny >= SIZE || board[ny][nx].hasShip) return false;
-  }
-  return true;
+// ========== Кубики ==========
+startBtn.addEventListener("click", () => {
+  if (!allFleetPlaced()) return (statusEl.textContent = "Расставьте корабли.");
+  autoPlaceComputer();
+  phase = "dice";
+  diceBox.style.display = "flex";
+  statusEl.textContent = "Бросьте кубики, чтобы определить, кто ходит первым.";
+  if (timerEl) timerEl.style.display = "none";
+});
+
+rollBtn.addEventListener("click", () => {
+  if (phase !== "dice") return;
+  rollBtn.disabled = true;
+
+  let tick = 0, finalP = 1, finalC = 1;
+  const interval = setInterval(() => {
+    finalP = Math.floor(Math.random() * 6) + 1;
+    finalC = Math.floor(Math.random() * 6) + 1;
+    diceResult.textContent = `Вы: ${finalP}, Соперник: ${finalC}`;
+    tick++;
+    if (tick >= 10) {
+      clearInterval(interval);
+      const playerStarts = finalP >= finalC;
+      diceResult.textContent += playerStarts ? " → Вы начинаете!" : " → Соперник начинает!";
+      startCountdown(playerStarts);
+    }
+  }, 100);
+});
+
+function startCountdown(playerStarts) {
+  let n = 3;
+  statusEl.textContent = `Начинаем через ${n}...`;
+  const timer = setInterval(() => {
+    n--;
+    if (n > 0) statusEl.textContent = `Начинаем через ${n}...`;
+    else {
+      clearInterval(timer);
+      document.querySelectorAll("button").forEach(btn => {
+        if (btn.id !== "toggleView") btn.style.display = "none";
+      });
+      phase = "battle";
+      currentTurn = playerStarts ? "player" : "computer";
+      if (playerStarts) {
+        statusEl.textContent = "Ваш ход! Стреляйте по полю соперника.";
+        playerEl.style.display = "none";
+        compEl.style.display = "grid";
+      } else {
+        statusEl.textContent = "Ход соперника...";
+        playerEl.style.display = "grid";
+        compEl.style.display = "none";
+        setTimeout(computerTurn, 1000);
+      }
+    }
+  }, 1000);
 }
 
-function placeShip(board, x, y, size, dir) {
-  for (let i = 0; i < size; i++) {
-    const nx = dir === "h" ? x + i : x;
-    const ny = dir === "v" ? y + i : y;
-    board[ny][nx].hasShip = true;
-  }
+// ========== Бой ==========
+function markAroundKilledShip(board, shipCells) {
+  for (const { x, y } of shipCells)
+    for (let yy = y - 1; yy <= y + 1; yy++)
+      for (let xx = x - 1; xx <= x + 1; xx++)
+        if (isInside(xx, yy) && !board[yy][xx].hit && !board[yy][xx].ship)
+          board[yy][xx].hit = true;
+}
+function isShipSunk(board, shipCells) {
+  return shipCells.every(({ x, y }) => board[y][x].hit);
 }
 
 function handlePlayerShot(x, y) {
-  if (!playerTurn || phase !== "battle") return;
-  const cell = enemyField[y][x];
+  const cell = computerBoard[y][x];
   if (cell.hit) return;
   cell.hit = true;
-  renderBoard(enemyField, enemyBoardEl, true);
-  if (cell.hasShip) {
-    statusEl.textContent = "🎯 Попадание!";
-    if (checkWin(enemyField)) {
-      statusEl.textContent = "🏆 Победа!";
-      phase = "end";
-      return;
+  
+  // 🔹 Мигание клетки при выстреле игрока
+  blinkCell(compEl, x, y);
+
+  if (cell.ship) {
+    statusEl.textContent = "Попадание!";
+    const ship = computerShips.find(s => s.some(c => c.x === x && c.y === y));
+    if (ship && isShipSunk(computerBoard, ship)) {
+      markAroundKilledShip(computerBoard, ship);
+      statusEl.textContent = "Корабль уничтожен!";
     }
+    if (checkWin(computerBoard)) return endGame("Вы победили!");
   } else {
-    statusEl.textContent = "💨 Мимо!";
-    playerTurn = false;
-    setTimeout(enemyMove, 1000);
+    statusEl.textContent = "Мимо! Теперь ход соперника.";
+    currentTurn = "computer";
+    setTimeout(() => {
+      statusEl.textContent = "Ход соперника...";
+      setTimeout(() => {
+        compEl.style.display = "none";
+        playerEl.style.display = "grid";
+        computerTurn();
+      }, 1000);
+    }, 1000);
   }
 }
 
-function enemyMove() {
-  let x, y;
-  do {
-    x = Math.floor(Math.random() * SIZE);
-    y = Math.floor(Math.random() * SIZE);
-  } while (playerField[y][x].hit);
-  playerField[y][x].hit = true;
-  renderBoard(playerField, playerBoardEl, false);
+// === Умный ИИ ===
+function computerTurn() {
+  if (phase !== "battle") return;
 
-  if (playerField[y][x].hasShip) {
-    statusEl.textContent = "ИИ попал!";
-    if (checkWin(playerField)) {
-      statusEl.textContent = "❌ Поражение!";
-      phase = "end";
-      return;
+  let x, y;
+  if (aiMemory.hits.length > 0) {
+    if (aiMemory.direction) {
+      const dir = aiMemory.direction;
+      const base = aiMemory.hits[0];
+      const last = aiMemory.hits[aiMemory.hits.length - 1];
+      const options = dir === "h"
+        ? [{ x: base.x - 1, y: base.y }, { x: last.x + 1, y: last.y }]
+        : [{ x: base.x, y: base.y - 1 }, { x: base.x, y: base.y + 1 }];
+      const t = options.find(c => isInside(c.x, c.y) && !playerBoard[c.y][c.x].hit);
+      if (t) { x = t.x; y = t.y; }
     }
-    setTimeout(enemyMove, 1000);
+    if (x === undefined) {
+      const b = aiMemory.hits[0];
+      const dirs = [
+        { x: b.x + 1, y: b.y },
+        { x: b.x - 1, y: b.y },
+        { x: b.x, y: b.y + 1 },
+        { x: b.x, y: b.y - 1 },
+      ];
+      const candidates = dirs.filter(c => isInside(c.x, c.y) && !playerBoard[c.y][c.x].hit);
+      if (candidates.length) {
+        const pick = candidates[Math.floor(Math.random() * candidates.length)];
+        x = pick.x; y = pick.y;
+      }
+    }
+  }
+
+  if (x === undefined) {
+    do {
+      x = Math.floor(Math.random() * SIZE);
+      y = Math.floor(Math.random() * SIZE);
+    } while (playerBoard[y][x].hit);
+  }
+
+  playerBoard[y][x].hit = true;
+  
+  // 🔹 Мигание клетки при выстреле ИИ
+  blinkCell(playerEl, x, y);
+
+  const cell = playerBoard[y][x];
+  if (cell.ship) {
+    aiMemory.hits.push({ x, y });
+    const ship = playerShips.find(s => s.some(c => c.x === x && c.y === y));
+    if (ship && isShipSunk(playerBoard, ship)) {
+      markAroundKilledShip(playerBoard, ship);
+      aiMemory = { hits: [], direction: "" };
+      statusEl.textContent = "Соперник потопил ваш корабль!";
+      if (checkWin(playerBoard)) return endGame("Соперник победил!");
+      setTimeout(computerTurn, 1200);
+    } else {
+      if (aiMemory.hits.length === 2) {
+        const [a, b] = aiMemory.hits;
+        aiMemory.direction = (a.x === b.x) ? "v" : "h";
+      }
+      statusEl.textContent = "Соперник попал! Стреляет ещё...";
+      setTimeout(computerTurn, 1000);
+    }
   } else {
-    statusEl.textContent = "Ваш ход!";
-    playerTurn = true;
+    statusEl.textContent = "Промах! Теперь ваш ход.";
+    currentTurn = "player";
+    setTimeout(() => {
+      statusEl.textContent = "Ваш ход!";
+      setTimeout(() => {
+        playerEl.style.display = "none";
+        compEl.style.display = "grid";
+      }, 1000);
+    }, 1000);
   }
 }
 
 function checkWin(board) {
-  return board.every(row => row.every(cell => !cell.hasShip || cell.hit));
+  for (let y = 0; y < SIZE; y++)
+    for (let x = 0; x < SIZE; x++)
+      if (board[y][x].ship && !board[y][x].hit) return false;
+  return true;
 }
 
+function endGame(msg) {
+  phase = "ended";
+  statusEl.textContent = msg;
+  diceBox.style.display = "none";
+  playerEl.style.display = "grid";
+  compEl.style.display = "grid";
+  toggleBtn.style.display = "inline-block";
+}
+
+// === Переключение полей ===
+toggleBtn.addEventListener("click", () => {
+  if (playerEl.style.display === "none") {
+    playerEl.style.display = "grid";
+    compEl.style.display = "none";
+  } else if (compEl.style.display === "none") {
+    playerEl.style.display = "none";
+    compEl.style.display = "grid";
+  } else {
+    playerEl.style.display = "grid";
+    compEl.style.display = "none";
+  }
+});
+
+// Инициализация
 function initGame() {
-  playerField = createBoard();
-  enemyField = createBoard();
-  autoPlaceShips(enemyField);
-  renderBoard(playerField, playerBoardEl, false);
-  renderBoard(enemyField, enemyBoardEl, true);
-  phase = "battle";
-  statusEl.textContent = "Ваш ход!";
+  // Сбрасываем флот в исходное состояние
+  Object.assign(FLEET, { 4: 1, 3: 2, 2: 3, 1: 4 });
+
+  playerBoard = makeEmptyBoard();
+  computerBoard = makeEmptyBoard();
+  playerShips = [];
+  computerShips = [];
+  selectedSize = null;
+  selectedCells = [];
+  phase = "placing";
+  currentTurn = null;
+  aiMemory = { hits: [], direction: "" };
+  lastShot = { x: -1, y: -1, board: null };
+
+  renderBoard(playerBoard, playerEl, true);
+  renderBoard(computerBoard, compEl, false);
+  updateShipButtons();
+  startBtn.disabled = true;
+  toggleBtn.style.display = "none";
+  diceBox.style.display = "none";
+
+  statusEl.textContent = "Расставьте корабли вручную или нажмите «Авторасстановка».";
 }
 
-if (!tg) window.onload = initGame;
+initGame();
