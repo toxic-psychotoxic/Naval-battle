@@ -1,4 +1,4 @@
-/* style.css — оформление игры "Морской бой" + экран выбора режима */
+/* style.css — оформление игры "Морской бой" */
 :root{
   --cell: 38px;
   --gap: 2px;
@@ -34,28 +34,6 @@ h1{ margin:10px 8px; text-align:center; }
   font-size:18px;
   max-width:900px;
 }
-
-/* 🔹 Экран выбора режима */
-.mode-select{
-  display:flex;
-  flex-direction:column;
-  align-items:center;
-  justify-content:center;
-  gap:14px;
-  margin-top:60px;
-}
-.mode-select button{
-  background:var(--panel);
-  color:#fff;
-  border:none;
-  padding:14px 22px;
-  border-radius:12px;
-  font-size:18px;
-  cursor:pointer;
-  min-width:220px;
-  transition:.2s;
-}
-.mode-select button:hover{ background:var(--panel-active); color:#000; }
 
 #setup-panel{
   display:flex;
@@ -142,20 +120,95 @@ h1{ margin:10px 8px; text-align:center; }
 .cell:active{ transform:scale(.98); }
 
 .cell.ship{ background: var(--my-ship); }
+.cell.select{ outline:2px solid var(--select); outline-offset:-2px; }
 .cell.hit{ background: var(--hit); }
 .cell.miss{ background: var(--miss); }
-.cell.preview { background-color: rgba(0, 200, 255, 0.6); outline: 2px solid #00c8ff; }
 
-/* Мигание клеток (как было) */
-.cell.blink { animation: blink-animation 0.5s ease-in-out 2 !important; z-index:10; }
+.cell.preview {
+  background-color: rgba(0, 200, 255, 0.6);
+  outline: 2px solid #00c8ff;
+}
+
+/* 🔹 Стили для мигающих клеток */
+.cell.blink {
+  animation: blink-animation 0.5s ease-in-out 2 !important;
+  z-index: 10;
+}
+
 @keyframes blink-animation {
-  0%,100%{opacity:1;transform:scale(1);}
-  50%{opacity:.7;transform:scale(1.15);}
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.7);
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.9);
+  }
+}
+
+/* 🔹 Убедимся, что мигание работает поверх других стилей */
+.cell.hit.blink {
+  animation: blink-hit 0.5s ease-in-out 2 !important;
+}
+
+@keyframes blink-hit {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(198, 40, 40, 0.7);
+    background: var(--hit);
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px rgba(198, 40, 40, 0.9);
+    background: #ff4444;
+  }
+}
+
+.cell.miss.blink {
+  animation: blink-miss 0.5s ease-in-out 2 !important;
+}
+
+@keyframes blink-miss {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.5);
+    background: var(--miss);
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7);
+    background: rgba(255, 255, 255, 0.5);
+  }
+}
+
+.cell.ship.blink {
+  animation: blink-ship 0.5s ease-in-out 2 !important;
+}
+
+@keyframes blink-ship {
+  0%, 100% { 
+    opacity: 1;
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(31, 111, 235, 0.7);
+    background: var(--my-ship);
+  }
+  50% { 
+    opacity: 0.7;
+    transform: scale(1.15);
+    box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.9);
+    background: #3a86ff;
+  }
 }
 
 .footer-actions{ display:flex; justify-content:center; margin-bottom:18px; }
 
-@media (max-width:520px){
-  :root{ --cell:30px; }
+@media (max-width: 520px){
+  :root{ --cell: 30px; }
   #status{ font-size:16px; }
 }
