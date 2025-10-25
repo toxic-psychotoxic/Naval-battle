@@ -1,9 +1,9 @@
-/* script.js — Морской бой с ИИ и онлайн-заготовкой (комнаты и ожидание) */
+/* script.js — Морской бой с ИИ и сетевым режимом (ожидание 15 секунд) */
 
 const tg = window.Telegram?.WebApp;
 if (tg) {
-  tg.expand(); // разворачивает WebApp
-  tg.disableClosingConfirmation(); // не закрывать после sendData
+  tg.expand(); // Разворачивает WebApp на весь экран
+  tg.disableClosingConfirmation(); // Не закрывает после sendData
 }
 
 let mode = null; // "ai" или "online"
@@ -43,7 +43,7 @@ if (roomId) {
     tg.sendData(JSON.stringify({ type: "join_room", room_id: roomId }));
   }
 } else {
-  // Обычный запуск — показываем выбор
+  // Обычный запуск — показываем выбор режима
   document.getElementById("aiMode").addEventListener("click", () => {
     mode = "ai";
     modeSelect.style.display = "none";
@@ -92,95 +92,130 @@ function renderBoard(board, element, showShips) {
 }
 
 function autoPlace(board, list) {
-  const sizes = [4,3,3,2,2,2,1,1,1,1];
+  const sizes = [4, 3, 3, 2, 2, 2, 1, 1, 1, 1];
   for (const len of sizes) {
-    let placed=false;
-    while(!placed){
-      const dir=Math.random()<.5?"h":"v";
-      const x0=Math.floor(Math.random()*SIZE);
-      const y0=Math.floor(Math.random()*SIZE);
-      const cells=[];
-      for(let i=0;i<len;i++){
-        const x=dir==="h"?x0+i:x0;
-        const y=dir==="v"?y0+i:y0;
-        if(!isInside(x,y)){cells.length=0;break;}
-        cells.push({x,y});
+    let placed = false;
+    while (!placed) {
+      const dir = Math.random() < 0.5 ? "h" : "v";
+      const x0 = Math.floor(Math.random() * SIZE);
+      const y0 = Math.floor(Math.random() * SIZE);
+      const cells = [];
+      for (let i = 0; i < len; i++) {
+        const x = dir === "h" ? x0 + i : x0;
+        const y = dir === "v" ? y0 + i : y0;
+        if (!isInside(x, y)) { cells.length = 0; break; }
+        cells.push({ x, y });
       }
-      if(!cells.length)continue;
-      if(cells.every(c=>!board[c.y][c.x].ship)){
-        cells.forEach(({x,y})=>board[y][x].ship=true);
+      if (!cells.length) continue;
+      if (cells.every(c => !board[c.y][c.x].ship)) {
+        cells.forEach(({ x, y }) => (board[y][x].ship = true));
         list.push(cells);
-        placed=true;
+        placed = true;
       }
     }
   }
 }
 
-function startBattleAI(){
-  phase="battle"; currentTurn="player";
-  statusEl.textContent="Ваш ход! Стреляйте по полю соперника.";
-  playerEl.style.display="none"; compEl.style.display="grid";
+function startBattleAI() {
+  phase = "battle";
+  currentTurn = "player";
+  statusEl.textContent = "Ваш ход! Стреляйте по полю соперника.";
+  playerEl.style.display = "none";
+  compEl.style.display = "grid";
 }
 
-function handlePlayerShot(x,y){
-  if(mode!=="ai")return;
-  const c=computerBoard[y][x];
-  if(c.hit)return;
-  c.hit=true;
-  renderBoard(computerBoard,compEl,false);
-  if(c.ship){
-    statusEl.textContent="Попадание!";
-    if(checkWin(computerBoard)) endGame("Вы победили!");
-  }else{
-    statusEl.textContent="Мимо!";
-    currentTurn="computer";
-    setTimeout(aiTurn,1000);
+function handlePlayerShot(x, y) {
+  if (mode !== "ai") return;
+  const c = computerBoard[y][x];
+  if (c.hit) return;
+  c.hit = true;
+  renderBoard(computerBoard, compEl, false);
+  if (c.ship) {
+    statusEl.textContent = "Попадание!";
+    if (checkWin(computerBoard)) endGame("Вы победили!");
+  } else {
+    statusEl.textContent = "Мимо!";
+    currentTurn = "computer";
+    setTimeout(aiTurn, 1000);
   }
 }
 
-function aiTurn(){
-  let x,y;
-  do{
-    x=Math.floor(Math.random()*SIZE);
-    y=Math.floor(Math.random()*SIZE);
-  }while(playerBoard[y][x].hit);
-  playerBoard[y][x].hit=true;
-  renderBoard(playerBoard,playerEl,true);
-  if(playerBoard[y][x].ship){
-    statusEl.textContent="ИИ попал!";
-    if(checkWin(playerBoard)) return endGame("ИИ победил!");
-    setTimeout(aiTurn,1000);
-  }else{
-    statusEl.textContent="Ваш ход!";
-    currentTurn="player";
+function aiTurn() {
+  let x, y;
+  do {
+    x = Math.floor(Math.random() * SIZE);
+    y = Math.floor(Math.random() * SIZE);
+  } while (playerBoard[y][x].hit);
+  playerBoard[y][x].hit = true;
+  renderBoard(playerBoard, playerEl, true);
+  if (playerBoard[y][x].ship) {
+    statusEl.textContent = "ИИ попал!";
+    if (checkWin(playerBoard)) return endGame("ИИ победил!");
+    setTimeout(aiTurn, 1000);
+  } else {
+    statusEl.textContent = "Ваш ход!";
+    currentTurn = "player";
   }
 }
 
-function checkWin(board){
-  return board.every(r=>r.every(c=>!c.ship||c.hit));
+function checkWin(board) {
+  return board.every(r => r.every(c => !c.ship || c.hit));
 }
 
-function endGame(msg){
-  statusEl.textContent=msg;
-  phase="end";
-  playerEl.style.display="grid"; compEl.style.display="grid";
+function endGame(msg) {
+  statusEl.textContent = msg;
+  phase = "end";
+  playerEl.style.display = "grid";
+  compEl.style.display = "grid";
 }
 
-function initGame(){
-  playerBoard=makeEmptyBoard();
-  computerBoard=makeEmptyBoard();
-  playerShips=[]; computerShips=[];
-  autoPlace(playerBoard,playerShips);
-  autoPlace(computerBoard,computerShips);
-  renderBoard(playerBoard,playerEl,true);
-  renderBoard(computerBoard,compEl,false);
+/* ========== Инициализация игры ========== */
+function initGame() {
+  playerBoard = makeEmptyBoard();
+  computerBoard = makeEmptyBoard();
+  playerShips = [];
+  computerShips = [];
+  autoPlace(playerBoard, playerShips);
+  autoPlace(computerBoard, computerShips);
+  renderBoard(playerBoard, playerEl, true);
+  renderBoard(computerBoard, compEl, false);
 
-  if(mode==="ai"){
-    statusEl.textContent="Ваш флот готов! Нажмите по клетке соперника.";
+  if (mode === "ai") {
+    statusEl.textContent = "Ваш флот готов! Нажмите по клетке соперника.";
     startBattleAI();
-  } else if(mode==="online"){
-    playerEl.style.display="grid";
-    compEl.style.display="none";
-    statusEl.textContent="🌐 Ожидаем соперника...";
+  } else if (mode === "online") {
+    playerEl.style.display = "grid";
+    compEl.style.display = "none";
+
+    let seconds = 15;
+    statusEl.textContent = `🌐 Ожидаем соперника... (${seconds})`;
+
+    const interval = setInterval(() => {
+      seconds--;
+      if (seconds > 0) {
+        statusEl.textContent = `🌐 Ожидаем соперника... (${seconds})`;
+      } else {
+        clearInterval(interval);
+        statusEl.textContent = "⏳ Соперник не подключился. Попробуйте позже.";
+        setTimeout(() => {
+          if (tg) tg.close(); // Закрыть WebApp
+          else window.location.reload(); // Или перезагрузить
+        }, 4000);
+      }
+    }, 1000);
   }
+}
+
+/* ========== Обработчик для ответа при подключении ========== */
+if (tg) {
+  tg.onEvent("web_app_data", (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.type === "opponent_joined") {
+        statusEl.textContent = "🎮 Соперник подключился! Игра начинается.";
+      }
+    } catch (e) {
+      console.error("web_app_data parse error:", e);
+    }
+  });
 }
