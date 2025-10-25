@@ -1,6 +1,10 @@
-/* script.js — Морской бой с ИИ и заготовкой для онлайн-режима */
+/* script.js — Морской бой с ИИ и онлайн-заготовкой (комнаты и ожидание) */
+
 const tg = window.Telegram?.WebApp;
-if (tg) tg.expand();
+if (tg) {
+  tg.expand(); // разворачивает WebApp
+  tg.disableClosingConfirmation(); // не закрывать после sendData
+}
 
 let mode = null; // "ai" или "online"
 const SIZE = 10;
@@ -21,27 +25,44 @@ const diceResult = document.getElementById("dice-result");
 const modeSelect = document.getElementById("mode-select");
 const gameContainer = document.getElementById("game-container");
 
-/* ========== Выбор режима ========== */
-document.getElementById("aiMode").addEventListener("click", () => {
-  mode = "ai";
-  modeSelect.style.display = "none";
-  gameContainer.style.display = "block";
-  initGame();
-});
+/* =============================
+   Проверяем, есть ли ?room= в URL
+============================= */
+const urlParams = new URLSearchParams(window.location.search);
+const roomId = urlParams.get("room");
 
-document.getElementById("netMode").addEventListener("click", () => {
+if (roomId) {
+  // Если зашли по приглашению
   mode = "online";
   modeSelect.style.display = "none";
   gameContainer.style.display = "block";
   initGame();
 
-  statusEl.textContent = "🌐 Онлайн-режим: создание или ожидание соперника...";
-  // Отправляем сигнал в Telegram о запуске сетевой игры
-  if (tg) tg.sendData(JSON.stringify({ type: "create_room" }));
-});
+  statusEl.textContent = "🔗 Подключаемся к комнате...";
+  if (tg) {
+    tg.sendData(JSON.stringify({ type: "join_room", room_id: roomId }));
+  }
+} else {
+  // Обычный запуск — показываем выбор
+  document.getElementById("aiMode").addEventListener("click", () => {
+    mode = "ai";
+    modeSelect.style.display = "none";
+    gameContainer.style.display = "block";
+    initGame();
+  });
 
-/* ========== Вся существующая логика игры с ИИ ========== */
-// (упрощённая вставка — полностью из твоей версии без изменений)
+  document.getElementById("netMode").addEventListener("click", () => {
+    mode = "online";
+    modeSelect.style.display = "none";
+    gameContainer.style.display = "block";
+    initGame();
+
+    statusEl.textContent = "🌐 Онлайн-режим: создаём комнату...";
+    if (tg) tg.sendData(JSON.stringify({ type: "create_room" }));
+  });
+}
+
+/* ========== Игровая логика (режим с ИИ) ========== */
 function makeEmptyBoard() {
   return Array.from({ length: SIZE }, () => Array.from({ length: SIZE }, () => ({ ship: false, hit: false })));
 }
@@ -61,6 +82,11 @@ function renderBoard(board, element, showShips) {
       if (d.hit && d.ship) cell.classList.add("hit");
       if (d.hit && !d.ship) cell.classList.add("miss");
       element.appendChild(cell);
+
+      // Режим с ИИ — клики активны
+      if (mode === "ai" && phase === "battle" && element === compEl) {
+        cell.addEventListener("click", () => handlePlayerShot(x, y));
+      }
     }
   }
 }
@@ -97,7 +123,7 @@ function startBattleAI(){
 }
 
 function handlePlayerShot(x,y){
-  if(mode!=="ai")return; // для онлайн будет позже
+  if(mode!=="ai")return;
   const c=computerBoard[y][x];
   if(c.hit)return;
   c.hit=true;
@@ -148,8 +174,13 @@ function initGame(){
   autoPlace(computerBoard,computerShips);
   renderBoard(playerBoard,playerEl,true);
   renderBoard(computerBoard,compEl,false);
-  statusEl.textContent= mode==="ai" ?
-    "Ваш флот готов! Нажмите по клетке соперника для выстрела." :
-    "Ожидаем соперника...";
-  if(mode==="ai") startBattleAI();
+
+  if(mode==="ai"){
+    statusEl.textContent="Ваш флот готов! Нажмите по клетке соперника.";
+    startBattleAI();
+  } else if(mode==="online"){
+    playerEl.style.display="grid";
+    compEl.style.display="none";
+    statusEl.textContent="🌐 Ожидаем соперника...";
+  }
 }
